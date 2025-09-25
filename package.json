@@ -1,0 +1,20 @@
+{
+  "name": "kafka-test-producer",
+  "version": "0.2.0",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "dependencies": {
+  "kafkajs": "2.2.4",
+    "@aws-sdk/credential-providers": "3.624.0",
+    "@aws-sdk/client-sts": "3.624.0",
+    "yargs": "17.7.2",
+  "kafkajs-msk-iam-authentication-mechanism": "3.1.2",
+  "snappyjs": "0.6.1"
+  },
+  "scripts": {
+    "produce": "node index.js produce",
+    "consume": "node index.js consume",
+    "postinstall": "node scripts/postinstall-fix.js || true"
+  }
+}

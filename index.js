@@ -53,7 +53,10 @@ async function buildOauthBearerProvider(argv, dbg) {
       awsRoleSessionName: 'kafkaTestSession',
       logger: dbg ? console : undefined
     });
-    return { value: tokenResp.token, expiration: tokenResp.expiration ? new Date(tokenResp.expiration).getTime() : undefined };
+    return { 
+      value: tokenResp.token, 
+      expiration: tokenResp.expiration ? new Date(tokenResp.expiration).getTime() : undefined 
+    };
   };
 }
 
@@ -81,7 +84,10 @@ async function buildKafka(argv) {
     requestTimeout: 30000,
     retry: { retries: 8, initialRetryTime: 300, maxRetryTime: 30000 },
     ssl: argv.ssl,
-    sasl: { mechanism: 'oauthbearer', oauthBearerProvider },
+    sasl: { 
+      mechanism: 'oauthbearer', 
+      oauthBearerProvider 
+    },
   });
   logDebug(dbg, 'Kafka config built', { brokers, hasSasl: true });
   return kafka;

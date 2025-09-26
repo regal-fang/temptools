@@ -9,14 +9,15 @@ npm install --omit=dev
 
 ## Dependencies
 - `kafkajs`
-- `kafkajs-msk-iam-authentication-mechanism` (adds `AWS_MSK_IAM` SASL mechanism for MSK IAM)
+- `aws-msk-iam-sasl-signer-js` (generates IAM auth token for MSK via SASL/OAUTHBEARER)
 - AWS SDK v3 credential providers + STS (for optional AssumeRole)
 
 ## Commands
 Two subcommands: `produce` and `consume`.
 
 ### New Options
-- `--ssl` (default true) Set `--ssl=false` to attempt PLAINTEXT (debug only; AWS_MSK_IAM normally requires TLS listener).
+- `--ssl` (default true) Set `--ssl=false` to attempt PLAINTEXT (debug only; IAM auth listener requires TLS).
+- `--awsDebugCreds` (default false) Extra STS identity fetch to log which IAM principal is used (adds latency).
 
 ### Produce examples
 Single message:
@@ -77,15 +78,15 @@ Consume-specific:
 - `--limit` Stop after N messages (0 = keep running).
 
 ### Cross-account flow
-1. Base credentials (IRSA / env / profile) acquired via provider chain. 
-2. If `--assumeRoleArn` supplied, STS AssumeRole executed and short‑lived credentials cached until near expiration.
-3. KafkaJS IAM mechanism signs each request (SigV4) with current credentials.
+1. Base credentials (IRSA / env / profile) acquired via AWS default provider chain. 
+2. If `--assumeRoleArn` supplied, signer library requests a token using that role (STS AssumeRole under the hood).
+3. Tool supplies token to KafkaJS via SASL/OAUTHBEARER `oauthbearer` mechanism.
 
 ### Notes
-- Ensure MSK cluster has IAM authentication enabled and you are using the IAM listener port.
+- Ensure MSK cluster has IAM authentication enabled and you are using the IAM listener port (SASL/OAUTHBEARER over TLS).
 - Role policy must include necessary `kafka-cluster:*` permissions for topics/consumer groups.
-- Clock skew can break SigV4; container time must be in sync.
-- Error `UNSUPPORTED_SASL_MECHANISM` usually means wrong listener/port or cluster not IAM-enabled.
+- Clock skew can break SigV4 token generation; container time must be in sync.
+- Error `SASL_AUTHENTICATION_FAILED` often means missing permissions or wrong listener.
 
 ### Scripts (npm)
 ```
@@ -126,7 +127,7 @@ node index.js consume \
 --limit 1
 
 
-node index.js consume --brokers "b-2-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198,b-1-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198,b-3-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198" --topic prism.raw.catalyst.elive --region eu-west-1 --groupId external.elive.prism.kafka.proxy.tool --clientId el-prism-kafka-proxy --assumeRoleArn arn:aws:iam::291654376946:role/ef-studio-prism-elive-integration --logLevel debug --limit 1 --ssl=true
+node index.js consume --brokers "b-2-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198,b-1-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198,b-3-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198" --topic prism.raw.catalyst.elive --region eu-west-1 --groupId external.elive.prism.kafka.proxy.tool --clientId el-prism-kafka-proxy --assumeRoleArn arn:aws:iam::291654376946:role/ef-studio-prism-elive-integration --logLevel debug --limit 1 --ssl=true --iam=true
 
 
 ### Exit

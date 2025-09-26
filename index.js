@@ -1,27 +1,13 @@
 #!/usr/bin/env node
-import pluginPkg from 'kafkajs-msk-iam-authentication-mechanism';
-const { createMechanism: createMskIamMechanism, TYPE: MSK_IAM_TYPE } = pluginPkg;
 import kafkaPkg from 'kafkajs';
 const { Kafka, logLevel, CompressionCodecs, CompressionTypes } = kafkaPkg;
+import { generateAuthTokenFromRole, generateAuthTokenFromCredentialsProvider } from 'aws-msk-iam-sasl-signer-js';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
 const startTs = Date.now();
 function logDebug(enabled, ...args) { if (enabled) console.log('[debug]', ...args); }
-
-// Ensure Snappy codec registered (override internal placeholder) using snappyjs
-try {
-  const { default: snappy } = await import('snappyjs');
-  // KafkaJS exports CompressionCodecs map where value for Snappy currently throws. Override with implementation.
-  CompressionCodecs[CompressionTypes.Snappy] = () => ({
-    compress: async encoder => snappy.compress(encoder.buffer),
-    decompress: async buffer => snappy.uncompress(buffer),
-  });
-  if (process.env.KAFKA_TOOL_CODEC_LOG) console.log('[debug] Snappy codec (snappyjs) override installed');
-} catch (e) {
-  if (process.env.KAFKA_TOOL_CODEC_LOG) console.log('[debug] Failed to install snappy codec', e?.message);
-}
 
 const baseYargs = yargs(hideBin(process.argv))
   .option('brokers', { type: 'string', demandOption: true, desc: 'Comma separated broker host:port list (Kafka listener)' })
@@ -30,6 +16,8 @@ const baseYargs = yargs(hideBin(process.argv))
   .option('clientId', { type: 'string', default: 'kafka-test-tool' })
   .option('logLevel', { choices: ['info','warn','error','debug','nothing'], default: 'info' })
   .option('ssl', { type: 'boolean', default: true, desc: 'Enable TLS (set false to test PLAINTEXT listener)' })
+  .option('iam', { type: 'boolean', default: true, desc: 'Enable IAM auth (oauthbearer). Set false for unauthenticated / non-IAM cluster.' })
+  .option('awsDebugCreds', { type: 'boolean', default: false, desc: 'Enable signer credential identity debug (extra STS call)' })
   .strict();
 
 baseYargs.command('produce', 'Send one or multiple messages', y => y
@@ -58,70 +46,50 @@ function mapLog(level) {
   }
 }
 
-function createAssumeRoleProvider(roleArn, region, sessionName = 'kafkaTestSession', durationSeconds = 3600, refreshBeforeMs = 5*60*1000, dbg=false) {
-  if (!roleArn) {
-    logDebug(dbg, 'Using base credential provider chain (no AssumeRole)');
-    return async () => fromNodeProviderChain()();
-  }
-  const base = fromNodeProviderChain();
-  let current; // {credentials, expiration}
-  async function assume() {
-    logDebug(dbg, 'Assuming role', roleArn, 'in', region);
-    const t0 = Date.now();
-    const { STSClient, AssumeRoleCommand } = await import('@aws-sdk/client-sts');
-    const baseCreds = await base();
-    const sts = new STSClient({ region, credentials: baseCreds });
-    const out = await sts.send(new AssumeRoleCommand({ RoleArn: roleArn, RoleSessionName: sessionName, DurationSeconds: durationSeconds }));
-    current = {
-      credentials: {
-        accessKeyId: out.Credentials.AccessKeyId,
-        secretAccessKey: out.Credentials.SecretAccessKey,
-        sessionToken: out.Credentials.SessionToken
-      },
-      expiration: out.Credentials.Expiration
-    };
-    logDebug(dbg, 'AssumeRole success in', (Date.now()-t0)+'ms', 'AKID prefix', current.credentials.accessKeyId.slice(0,4), 'expires', current.expiration.toISOString());
-  }
+async function buildOauthBearerProvider(argv, dbg) {
+  const { region, assumeRoleArn: roleArn, awsDebugCreds } = argv;
+  const baseProvider = fromNodeProviderChain();
   return async () => {
-    if (!current || (current.expiration && Date.now() + refreshBeforeMs > current.expiration.getTime())) {
-      await assume();
-    }
-    return current.credentials;
+    const tokenResp = roleArn
+      ? await generateAuthTokenFromRole({ region, awsRoleArn: roleArn, awsRoleSessionName: 'kafkaTestSession', awsDebugCreds, logger: dbg ? console : undefined })
+      : await generateAuthTokenFromCredentialsProvider({ region, awsCredentialsProvider: baseProvider, awsDebugCreds, logger: dbg ? console : undefined });
+    return { value: tokenResp.token, expiration: tokenResp.expiration ? new Date(tokenResp.expiration).getTime() : undefined };
   };
 }
 
-function buildKafka(argv) {
+async function buildKafka(argv) {
   const dbg = argv.logLevel === 'debug';
   const brokers = argv.brokers.split(',').map(b => b.trim()).filter(Boolean);
-  logDebug(dbg, 'Kafka config', { brokers, region: argv.region, assumeRole: !!argv.assumeRoleArn, clientId: argv.clientId, ssl: argv.ssl });
-  const credentialsProvider = createAssumeRoleProvider(argv.assumeRoleArn, argv.region, 'kafkaTestSession', 3600, 5*60*1000, dbg);
+  const needIam = argv.iam !== false;
+  if (needIam && !argv.ssl) console.warn('[warn] Disabling TLS while IAM enabled is likely to fail.');
 
-  const mechanism = createMskIamMechanism({
-    region: argv.region,
-    credentials: async () => credentialsProvider()
-  }, MSK_IAM_TYPE);
+  // Ensure snappy registered (idempotent reassign ok)
+  try {
+    const { default: snappy } = await import('snappyjs');
+    CompressionCodecs[CompressionTypes.Snappy] = () => ({
+      compress: async encoder => snappy.compress(encoder.buffer),
+      decompress: async buffer => snappy.uncompress(buffer),
+    });
+  } catch {}
 
-  if (!argv.ssl) {
-    console.warn('[warn] TLS disabled via --ssl=false. AWS_MSK_IAM normally requires SASL_SSL listener; this may fail if broker does not allow IAM over PLAINTEXT.');
-  }
+  const oauthBearerProvider = needIam ? await buildOauthBearerProvider(argv, dbg) : null;
 
   const kafka = new Kafka({
     clientId: argv.clientId,
     brokers,
-    ssl: argv.ssl,
-    sasl: mechanism,
     logLevel: mapLog(argv.logLevel),
     connectionTimeout: 8000,
     requestTimeout: 30000,
-    retry: { retries: 8, initialRetryTime: 300, maxRetryTime: 30000 }
+    retry: { retries: 8, initialRetryTime: 300, maxRetryTime: 30000 },
+    ...(needIam ? { ssl: argv.ssl, sasl: { mechanism: 'oauthbearer', oauthBearerProvider } } : (argv.ssl ? { ssl: argv.ssl } : {})),
   });
-  logDebug(dbg, 'Kafka instance created');
+  logDebug(dbg, 'Kafka config built', { brokers, needIam, hasSasl: !!(needIam) });
   return kafka;
 }
 
 async function handlerProduce(argv) {
   const dbg = argv.logLevel === 'debug';
-  const kafka = buildKafka(argv);
+  const kafka = await buildKafka(argv);
   const producer = kafka.producer({ allowAutoTopicCreation: false });
   logDebug(dbg, 'Connecting producer...');
   await producer.connect();
@@ -139,7 +107,7 @@ async function handlerProduce(argv) {
 
 async function handlerConsume(argv) {
   const dbg = argv.logLevel === 'debug';
-  const kafka = buildKafka(argv);
+  const kafka = await buildKafka(argv);
   const consumer = kafka.consumer({ groupId: argv.groupId });
   logDebug(dbg, 'Connecting consumer...');
   await consumer.connect();

@@ -127,7 +127,7 @@ node index.js consume \
 --limit 1
 
 
-node index.js consume --brokers "b-2-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198,b-1-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198,b-3-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198" --topic prism.raw.catalyst.elive --region eu-west-1 --groupId external.elive.prism.kafka.proxy.tool --clientId el-prism-kafka-proxy --assumeRoleArn arn:aws:iam::291654376946:role/ef-studio-prism-elive-integration --logLevel debug --limit 1 --ssl=true --iam=true
+node index.js consume --brokers "b-2-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198,b-1-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198,b-3-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198" --topic prism.raw.catalyst.elive --region eu-west-1 --groupId external.elive.prism.kafka.proxy.tool --clientId el-prism-kafka-proxy --assumeRoleArn arn:aws:iam::291654376946:role/ef-studio-prism-elive-integration --logLevel debug --limit 10 --ssl=true --iam=true
 
 
 ### Exit

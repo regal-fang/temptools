@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import kafkaPkg from 'kafkajs';
 const { Kafka, logLevel, CompressionCodecs, CompressionTypes } = kafkaPkg;
-import { generateAuthTokenFromRole, generateAuthTokenFromCredentialsProvider } from 'aws-msk-iam-sasl-signer-js';
-import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
+import { generateAuthTokenFromRole } from 'aws-msk-iam-sasl-signer-js';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
@@ -12,11 +11,10 @@ function logDebug(enabled, ...args) { if (enabled) console.log('[debug]', ...arg
 const baseYargs = yargs(hideBin(process.argv))
   .option('brokers', { type: 'string', demandOption: true, desc: 'Comma separated broker host:port list (Kafka listener)' })
   .option('region', { type: 'string', demandOption: true, desc: 'Kafka cluster AWS region' })
-  .option('assumeRoleArn', { type: 'string', desc: 'Optional remote role to assume (cross-account). If omitted uses base creds.' })
+  .option('assumeRoleArn', { type: 'string', demandOption: true, desc: 'Required role to assume (cross-account).' })
   .option('clientId', { type: 'string', default: 'kafka-test-tool' })
   .option('logLevel', { choices: ['info','warn','error','debug','nothing'], default: 'info' })
-  .option('ssl', { type: 'boolean', default: true, desc: 'Enable TLS (set false to test PLAINTEXT listener)' })
-  .option('iam', { type: 'boolean', default: true, desc: 'Enable IAM auth (oauthbearer). Set false for unauthenticated / non-IAM cluster.' })
+  .option('ssl', { type: 'boolean', default: true, desc: 'Enable TLS (should stay true for IAM listener)' })
   .option('awsDebugCreds', { type: 'boolean', default: false, desc: 'Enable signer credential identity debug (extra STS call)' })
   .strict();
 
@@ -48,11 +46,14 @@ function mapLog(level) {
 
 async function buildOauthBearerProvider(argv, dbg) {
   const { region, assumeRoleArn: roleArn, awsDebugCreds } = argv;
-  const baseProvider = fromNodeProviderChain();
   return async () => {
-    const tokenResp = roleArn
-      ? await generateAuthTokenFromRole({ region, awsRoleArn: roleArn, awsRoleSessionName: 'kafkaTestSession', awsDebugCreds, logger: dbg ? console : undefined })
-      : await generateAuthTokenFromCredentialsProvider({ region, awsCredentialsProvider: baseProvider, awsDebugCreds, logger: dbg ? console : undefined });
+    const tokenResp = await generateAuthTokenFromRole({
+      region,
+      awsRoleArn: roleArn,
+      awsRoleSessionName: 'kafkaTestSession',
+      awsDebugCreds,
+      logger: dbg ? console : undefined
+    });
     return { value: tokenResp.token, expiration: tokenResp.expiration ? new Date(tokenResp.expiration).getTime() : undefined };
   };
 }
@@ -60,8 +61,7 @@ async function buildOauthBearerProvider(argv, dbg) {
 async function buildKafka(argv) {
   const dbg = argv.logLevel === 'debug';
   const brokers = argv.brokers.split(',').map(b => b.trim()).filter(Boolean);
-  const needIam = argv.iam !== false;
-  if (needIam && !argv.ssl) console.warn('[warn] Disabling TLS while IAM enabled is likely to fail.');
+  if (!argv.ssl) console.warn('[warn] TLS disabled but IAM auth requires TLS listener. This may fail.');
 
   // Ensure snappy registered (idempotent reassign ok)
   try {
@@ -72,7 +72,7 @@ async function buildKafka(argv) {
     });
   } catch {}
 
-  const oauthBearerProvider = needIam ? await buildOauthBearerProvider(argv, dbg) : null;
+  const oauthBearerProvider = await buildOauthBearerProvider(argv, dbg);
 
   const kafka = new Kafka({
     clientId: argv.clientId,
@@ -81,9 +81,10 @@ async function buildKafka(argv) {
     connectionTimeout: 8000,
     requestTimeout: 30000,
     retry: { retries: 8, initialRetryTime: 300, maxRetryTime: 30000 },
-    ...(needIam ? { ssl: argv.ssl, sasl: { mechanism: 'oauthbearer', oauthBearerProvider } } : (argv.ssl ? { ssl: argv.ssl } : {})),
+    ssl: argv.ssl,
+    sasl: { mechanism: 'oauthbearer', oauthBearerProvider },
   });
-  logDebug(dbg, 'Kafka config built', { brokers, needIam, hasSasl: !!(needIam) });
+  logDebug(dbg, 'Kafka config built', { brokers, hasSasl: true });
   return kafka;
 }
 

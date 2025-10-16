@@ -142,6 +142,10 @@ npm install --omit=dev
 node index.js consume --brokers "b-2-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198,b-1-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198,b-3-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198" --topic prism.raw.catalyst.elive --region eu-west-1 --groupId external.elive.prism.kafka.proxy.tool --clientId el-prism-kafka-proxy --assumeRoleArn arn:aws:iam::291654376946:role/ef-studio-prism-elive-integration --logLevel debug --limit 10 --ssl=true --iam=true
 
 
+node index.js produce \
+  --brokers "b-2-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198,b-1-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198,b-3-public.kafka-prism-dev.j4p0qp.c3.kafka.eu-west-1.amazonaws.com:9198" --topic prism.raw.gap.student-fluency-averaged --region eu-west-1 --message '{"studentId":"testByRegal","cohort":"2025","fluencyScore":0.87,"capturedAt":"2025-10-16T08:15:00Z"}' --assumeRoleArn arn:aws:iam::291654376946:role/ef-studio-prism-elive-integration
+
+
 ### Exit
 Ctrl+C triggers graceful disconnect.
 

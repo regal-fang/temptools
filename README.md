@@ -30,6 +30,16 @@ node index.js produce \
   --assumeRoleArn $REMOTE_KAFKA_ROLE_ARN
 ```
 
+Send student fluency snapshot (JSON payload):
+```
+node index.js produce \
+  --brokers "$KAFKA_BOOTSTRAP_SERVERS" \
+  --topic prism.raw.gap.student-fluency-averaged \
+  --region $DESTINATION_KAFKA_REGION \
+  --message '{"studentId":"testByRegal","cohort":"2025","fluencyScore":0.87,"capturedAt":"2025-10-16T08:15:00Z"}' \
+  --assumeRoleArn $DESTINATION_KAFKA_ROLE_ARN
+```
+
 Burst 10 messages (100ms interval):
 ```
 node index.js produce \

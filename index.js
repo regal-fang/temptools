@@ -82,6 +82,12 @@ async function buildKafka(argv) {
     logLevel: mapLog(argv.logLevel),
     connectionTimeout: 8000,
     requestTimeout: 30000,
+    retry: { retries: 8, initialRetryTime: 300, maxRetryTime: 30000 },
+    ssl: argv.ssl,
+    sasl: { 
+      mechanism: 'oauthbearer', 
+      oauthBearerProvider 
+    },
   });
   logDebug(dbg, 'Kafka config built', { brokers, hasSasl: true });
   return kafka;

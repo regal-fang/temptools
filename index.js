@@ -61,7 +61,7 @@ async function buildOauthBearerProvider(argv, dbg) {
       region,
       awsRoleArn: roleArn,
       awsRoleSessionName: 'school-events-adapter',
-      logger
+      logger: console,
     })
 
     console.log('--tokenResp--:', tokenResp);

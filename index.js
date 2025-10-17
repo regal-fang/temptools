@@ -45,22 +45,33 @@ function mapLog(level) {
 }
 
 async function buildOauthBearerProvider(argv, dbg) {
-  const { region, assumeRoleArn: roleArn, awsDebugCreds } = argv;
+  let cachedToken = null
+  let tokenExpiry = null
+
   return async () => {
+    const now = Date.now()
+    if (cachedToken && tokenExpiry && now < (tokenExpiry - 300000)) {
+      return {
+        value: cachedToken
+      }
+    }
+
     const tokenResp = await generateAuthTokenFromRole({
       region,
       awsRoleArn: roleArn,
-      awsRoleSessionName: 'kafkaTestSession',
-      logger: dbg ? console : undefined
-    });
+      awsRoleSessionName: 'school-events-adapter',
+      logger
+    })
 
-    console.log('--tokenResp.expiration--:', tokenResp);
+    console.log('--tokenResp--:', tokenResp);
 
-    return { 
-      value: tokenResp.token, 
-      expiration: tokenResp.expiration ? new Date(tokenResp.expiration).getTime() : undefined 
-    };
-  };
+    cachedToken = tokenResp.token
+    tokenExpiry = tokenResp.expiryTime
+
+    return {
+      value: tokenResp.token
+    }
+  }
 }
 
 async function buildKafka(argv) {

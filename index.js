@@ -45,7 +45,7 @@ function mapLog(level) {
 }
 
 async function buildOauthBearerProvider(argv, dbg) {
-  const { region, roleArn, awsDebugCreds } = argv;
+  const { region, assumeRoleArn: roleArn, awsDebugCreds } = argv;
   let cachedToken = null
   let tokenExpiry = null
 

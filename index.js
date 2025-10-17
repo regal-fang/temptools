@@ -54,7 +54,7 @@ async function buildOauthBearerProvider(argv, dbg) {
       logger: dbg ? console : undefined
     });
 
-    console.log('--tokenResp.expiration--:', tokenResp.expiration);
+    console.log('--tokenResp.expiration--:', tokenResp);
 
     return { 
       value: tokenResp.token, 

@@ -53,6 +53,9 @@ async function buildOauthBearerProvider(argv, dbg) {
       awsRoleSessionName: 'kafkaTestSession',
       logger: dbg ? console : undefined
     });
+
+    console.log('--tokenResp.expiration--:', tokenResp.expiration);
+
     return { 
       value: tokenResp.token, 
       expiration: tokenResp.expiration ? new Date(tokenResp.expiration).getTime() : undefined 
